@@ -21,7 +21,9 @@ class Exchanger(ttk.Frame):
 
         #Variables de control
         self.strInQuantity = StringVar(value="")
-        self.strInQuantity.trace('w', self.convertirDivisas)
+        self.oldInQuantity = self.strInQuantity.get()
+        #El trace hace que se siga los cambios "la w es porque es escritura"
+        self.strInQuantity.trace('w', self.validarCantidad)
 
         self.strInCurrency = StringVar()
         self.strOutCurrency = StringVar()
@@ -57,10 +59,67 @@ class Exchanger(ttk.Frame):
         
         frOutCurrency.pack(side=LEFT, fill=BOTH, expand=True)
 
+        frErrorMessages = ttk.Frame(self, height=40)
+        frErrorMessages.pack(side=BOTTOM, fill=X)
+        frErrorMessages.pack_propagate(0)
+
+        self.lblErrorMessages = ttk.Label(frErrorMessages, text="", width=50, foreground="red", anchor =CENTER)
+        self.lblErrorMessages.pack(side=BOTTOM, fill=BOTH, expand=True)
+
+
+    def validarCantidad(self, *args):
+        try:
+            v= float(self.strInQuantity.get())
+            self.oldInQuantity = v
+            self.convertirDivisas()
+        except:
+            self.strInQuantity.set(self.oldInQuantity)
+
+        
+
+
     def convertirDivisas(self, *args):
         print("in", self.strInCurrency.get())
         print("out", self.strOutCurrency.get())
+        
         print("Cantidad", self.strInQuantity.get())
+        base = 'EUR'
+        _from = self.strInCurrency.get()
+        _from = _from[:3]
+        _to = self.strOutCurrency.get()
+        _to = _to[:3]
+        symbols = _from+","+_to
+        #la linea de abajo es lo mismo que la de arriba
+        ##symbols = "{},{}".format(_from, _to)
+
+        self.strInCurrency.get()
+
+        if self.strInCurrency.get() and self.strOutCurrency.get() and self.strInQuantity.get():
+            print("Llama a fixer io las dos veces")
+            self.lblErrorMessages.config(text="Conectando ...")
+            response = requests.get(self.rate_ep.format(self.api_key, base, symbols))
+
+            if response.status_code == 200:
+                data = json.loads(response.text)
+                if data['success']:
+
+                    tasa_conversion = data['rates'][_from]
+                    tasa_conversion2 = data['rates'][_to]
+                    self.lblErrorMessages.config(text="")
+                else:
+                    msgError = data["error"]["code"] + " - " + data["error"]["type"]
+                    msgError = "{} - {}".format(data["error"]["code"], data["error"]["type"])
+                    print(msgError)
+
+            else:
+                msgError = "Se ha producido un error en la consulta API: "+response.status_code
+                print(msgError)
+                
+                self.lblErrorMessages.config(text=msgError)
+                return
+            valor_label = round(float(self.strInQuantity.get()) / tasa_conversion * tasa_conversion2, 5)
+            self.outQuantityLbl.config(text = valor_label)
+            
 
     def getCurrencies(self):
         response = requests.get(self.all_symbols_ep.format(self.api_key))
@@ -74,7 +133,11 @@ class Exchanger(ttk.Frame):
                 result.append(text)
             return result
         else:
-            print("Se ha producido un error al consultar symbols:", response.status_code)
+            
+            msgError = "Se ha producido un error en la consulta API: "+response.status_code
+            print(msgError)
+            self.lblErrorMessages.config(text=msgError)
+            return
 
 
 
