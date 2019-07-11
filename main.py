@@ -17,7 +17,10 @@ class Exchanger(ttk.Frame):
         self.all_symbols_ep = config['fixer.io']['ALL_SYMBOLS_EP']
         self.rate_ep = config['fixer.io']['RATE_LATEST_EP']
 
-        currencies = self.getCurrencies()
+
+        #####url = self.all_symbols_ep.format(self.api_key)
+        #####currencies = self.getCurrencies()
+        #####self.accesoAPI(url, self.getCurrencies)
 
         #Variables de control
         self.strInQuantity = StringVar(value="")
@@ -29,6 +32,15 @@ class Exchanger(ttk.Frame):
         self.strOutCurrency = StringVar()
 
         self.pack_propagate(0)
+        
+        frErrorMessages = ttk.Frame(self, height=40)
+        frErrorMessages.pack(side=BOTTOM, fill=X)
+        frErrorMessages.pack_propagate(0)
+        
+        self.lblErrorMessages = ttk.Label(frErrorMessages, text="", width=50, foreground='red', anchor=CENTER)
+        self.lblErrorMessages.pack(side=BOTTOM, fill=BOTH, expand=True)
+
+
         frInCurrency = ttk.Frame(self)
         frInCurrency.pack_propagate(0)
 
@@ -38,7 +50,7 @@ class Exchanger(ttk.Frame):
         self.inQuantityEntry = ttk.Entry(frInCurrency, font=('Helvetica', 24, 'bold'), width=10, textvariable=self.strInQuantity)
         self.inQuantityEntry.pack(side=TOP, fill=X, padx=DEFAULTPADDING, pady=DEFAULTPADDING)
 
-        self.inCurrencyCombo = ttk.Combobox(frInCurrency, width=25, height=5, values=currencies, textvariable=self.strInCurrency)
+        self.inCurrencyCombo = ttk.Combobox(frInCurrency, width=25, height=5, textvariable=self.strInCurrency)
         self.inCurrencyCombo.pack(side=TOP, fill=X, padx=DEFAULTPADDING, pady=DEFAULTPADDING)
         self.inCurrencyCombo.bind('<<ComboboxSelected>>', self.convertirDivisas)
 
@@ -51,93 +63,84 @@ class Exchanger(ttk.Frame):
         lblQ.pack(side=TOP, fill=X, padx=DEFAULTPADDING, pady=DEFAULTPADDING)
 
         self.outQuantityLbl = ttk.Label(frOutCurrency, font=('Helvetica', 26), anchor=E, width=10)
-        self.outQuantityLbl.pack(side=TOP, fill=X, padx=DEFAULTPADDING, pady=DEFAULTPADDING, ipady=0)
+        self.outQuantityLbl.pack(side=TOP, fill=X, padx=DEFAULTPADDING, pady=DEFAULTPADDING, ipady=2)
 
-        self.outCurrencyCombo = ttk.Combobox(frOutCurrency, width=25, height=5, values=currencies, textvariable=self.strOutCurrency)
+        self.outCurrencyCombo = ttk.Combobox(frOutCurrency, width=25, height=5, textvariable=self.strOutCurrency)
         self.outCurrencyCombo.pack(side=TOP, fill=X, padx=DEFAULTPADDING, pady=DEFAULTPADDING)
         self.outCurrencyCombo.bind('<<ComboboxSelected>>', self.convertirDivisas)
         
         frOutCurrency.pack(side=LEFT, fill=BOTH, expand=True)
 
-        frErrorMessages = ttk.Frame(self, height=40)
-        frErrorMessages.pack(side=BOTTOM, fill=X)
-        frErrorMessages.pack_propagate(0)
+        url = self.all_symbols_ep.format(self.api_key)
+        self.accesoAPI(url, self.getCurrencies)
 
-        self.lblErrorMessages = ttk.Label(frErrorMessages, text="", width=50, foreground="red", anchor =CENTER)
-        self.lblErrorMessages.pack(side=BOTTOM, fill=BOTH, expand=True)
 
 
     def validarCantidad(self, *args):
         try:
-            v= float(self.strInQuantity.get())
+            v = float(self.strInQuantity.get())
             self.oldInQuantity = v
             self.convertirDivisas()
         except:
             self.strInQuantity.set(self.oldInQuantity)
-
         
+
+    def accesoAPI(self, url, callback, **args):
+        response = requests.get(url)
+
+        if response.status_code == 200:
+            callback(response.text, **args)
+        else:
+            msgError = 'Error en acceso a {}. response-code: {}'.format(url, response.status_code)
+            raise Exception(msgError)        
 
 
     def convertirDivisas(self, *args):
-        print("in", self.strInCurrency.get())
-        print("out", self.strOutCurrency.get())
-        
-        print("Cantidad", self.strInQuantity.get())
         base = 'EUR'
         _from = self.strInCurrency.get()
         _from = _from[:3]
         _to = self.strOutCurrency.get()
         _to = _to[:3]
         symbols = _from+","+_to
-        #la linea de abajo es lo mismo que la de arriba
-        ##symbols = "{},{}".format(_from, _to)
+        
+        if self.strInCurrency.get() and self.strOutCurrency.get() and self.strInQuantity.get(): 
+            self.lblErrorMessages.config(text='Conectando ...')
 
-        self.strInCurrency.get()
-
-        if self.strInCurrency.get() and self.strOutCurrency.get() and self.strInQuantity.get():
-            print("Llama a fixer io las dos veces")
-            self.lblErrorMessages.config(text="Conectando ...")
-            response = requests.get(self.rate_ep.format(self.api_key, base, symbols))
-
-            if response.status_code == 200:
-                data = json.loads(response.text)
-                if data['success']:
-
-                    tasa_conversion = data['rates'][_from]
-                    tasa_conversion2 = data['rates'][_to]
-                    self.lblErrorMessages.config(text="")
-                else:
-                    msgError = data["error"]["code"] + " - " + data["error"]["type"]
-                    msgError = "{} - {}".format(data["error"]["code"], data["error"]["type"])
-                    print(msgError)
-
-            else:
-                msgError = "Se ha producido un error en la consulta API: "+response.status_code
-                print(msgError)
-                
-                self.lblErrorMessages.config(text=msgError)
-                return
-            valor_label = round(float(self.strInQuantity.get()) / tasa_conversion * tasa_conversion2, 5)
-            self.outQuantityLbl.config(text = valor_label)
+            url = self.rate_ep.format(self.api_key, base, symbols)
+            self.accesoAPI(url, self.showConversionRate)
             
+            #valor_label = Cantidad / tasa_conversion * tasa_conversion2
 
-    def getCurrencies(self):
-        response = requests.get(self.all_symbols_ep.format(self.api_key))
 
-        if response.status_code == 200:
-            currencies = json.loads(response.text)
-            result = []
-            symbols = currencies['symbols']
-            for symbol in symbols:
-                text = "{} - {}".format(symbol, symbols[symbol])
-                result.append(text)
-            return result
+
+    def showConversionRate(self, textdata):
+        data = json.loads(textdata)
+        if data['success']:
+            tasa_conversion = []
+            for tasa in data['rates']:
+                tasa_conversion.append(data['rates'][tasa])
+            self.lblErrorMessages.config(text='')
         else:
-            
-            msgError = "Se ha producido un error en la consulta API: "+response.status_code
+            msgError = "{} - {}".format(data['error']['code'], data['error']['type'] )
             print(msgError)
-            self.lblErrorMessages.config(text=msgError)
-            return
+            raise Exception(msgError)
+
+
+        valor_label = round(float(self.strInQuantity.get()) / tasa_conversion[0] * tasa_conversion[1], 5)
+        self.outQuantityLbl.config(text=valor_label)
+
+
+
+    def getCurrencies(self, textdata):
+        currencies = json.loads(textdata)
+        result = []
+        symbols = currencies['symbols']
+        for symbol in symbols:
+            text = "{} - {}".format(symbol, symbols[symbol])
+            result.append(text)
+        
+        self.inCurrencyCombo.config(values = result)
+        self.outCurrencyCombo.config(values = result)
 
 
 
