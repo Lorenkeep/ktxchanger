@@ -7,6 +7,11 @@ import requests
 
 DEFAULTPADDING = 4
 
+class APIaccessError(Exception):
+    def __init__(self, cause):
+        Exception.__init__(self)
+        self.cause = cause
+
 class Exchanger(ttk.Frame):
     def __init__(self, parent):
         ttk.Frame.__init__(self, width="400", height="150")
@@ -72,8 +77,10 @@ class Exchanger(ttk.Frame):
         frOutCurrency.pack(side=LEFT, fill=BOTH, expand=True)
 
         url = self.all_symbols_ep.format(self.api_key)
-        self.accesoAPI(url, self.getCurrencies)
-
+        try:
+            self.accesoAPI(url, self.getCurrencies)
+        except APIaccessError as e:
+            self.lblErrorMessages.config(text=e.cause)
 
 
     def validarCantidad(self, *args):
@@ -86,13 +93,17 @@ class Exchanger(ttk.Frame):
         
 
     def accesoAPI(self, url, callback, **args):
-        response = requests.get(url)
+        try:
+            response = requests.get(url)
+        except requests.exceptions.ConectionError as e:
+            print(e)
+            raise APIaccessError("Error de conexion al servidor.")
 
         if response.status_code == 200:
             callback(response.text, **args)
         else:
-            msgError = 'Error en acceso a {}. response-code: {}'.format(url, response.status_code)
-            raise Exception(msgError)        
+            msgError = '{} -: {}'.format(url, response.status_code)
+            raise APIaccessError(msgError)        
 
 
     def convertirDivisas(self, *args):
@@ -107,26 +118,31 @@ class Exchanger(ttk.Frame):
             self.lblErrorMessages.config(text='Conectando ...')
 
             url = self.rate_ep.format(self.api_key, base, symbols)
-            self.accesoAPI(url, self.showConversionRate)
+
+            try:
+                self.accesoAPI(url, self.showConversionRate, From=_from, To=_to)
+
+            except APIaccessError as e:
+                self.lblErrorMessages.config(text=e.cause)
+
             
             #valor_label = Cantidad / tasa_conversion * tasa_conversion2
 
 
 
-    def showConversionRate(self, textdata):
+    def showConversionRate(self, textdata, **args):
         data = json.loads(textdata)
         if data['success']:
-            tasa_conversion = []
-            for tasa in data['rates']:
-                tasa_conversion.append(data['rates'][tasa])
-            self.lblErrorMessages.config(text='')
+            tasa_conversion = data['rates'][args["From"]]
+            tasa_conversion2 = data['rates'][args["To"]]
+            
         else:
             msgError = "{} - {}".format(data['error']['code'], data['error']['type'] )
             print(msgError)
-            raise Exception(msgError)
+            raise APIaccessError(msgError)
 
 
-        valor_label = round(float(self.strInQuantity.get()) / tasa_conversion[0] * tasa_conversion[1], 5)
+        valor_label = round(float(self.strInQuantity.get()) / tasa_conversion * tasa_conversion2, 5)
         self.outQuantityLbl.config(text=valor_label)
 
 
